@@ -1,0 +1,20 @@
+# Personal/job-search data -- not part of the published framework
+data/resume/
+data/targets/target_roles.md
+state/
+
+# Generated demo projects -- each gets published as its own separate repo
+output/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

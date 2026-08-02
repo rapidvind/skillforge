@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SkillForge — Pipeline</title>
+<style>
+  :root {
+    --bg: #060b10;
+    --bg-deep: #020508;
+    --surface: rgba(11, 24, 32, .72);
+    --surface-sunken: rgba(79, 225, 255, .06);
+    --text: #d7f3ff;
+    --text-muted: #6f95a3;
+    --border: rgba(79, 225, 255, .22);
+    --accent: #4fe1ff;
+    --accent-glow: rgba(79, 225, 255, .55);
+    --accent-line: rgba(79, 225, 255, .16);
+    --status-done-bg: rgba(70, 255, 176, .1); --status-done-fg: #46ffb0;
+    --status-active-bg: rgba(79, 225, 255, .12); --status-active-fg: #4fe1ff;
+    --status-pending-bg: rgba(111, 147, 163, .1); --status-pending-fg: #6f95a3;
+    --status-blocked-bg: rgba(255, 179, 71, .12); --status-blocked-fg: #ffb347;
+    --token-gap: #b98bff;
+    --token-project: #ffcf5c;
+    --shadow: 0 0 0 1px rgba(79,225,255,.08), 0 12px 32px -10px rgba(0,0,0,.7);
+  }
+  * { box-sizing: border-box; }
+  html { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; background:
+      radial-gradient(ellipse 1200px 700px at 50% -10%, rgba(79,225,255,.10), transparent 60%),
+      radial-gradient(ellipse 900px 600px at 100% 100%, rgba(185,139,255,.06), transparent 60%),
+      var(--bg-deep);
+    color: var(--text); font-family: -apple-system,"Segoe UI","Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing: antialiased; position: relative; overflow-x: hidden; }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image:
+      linear-gradient(rgba(79,225,255,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(79,225,255,.05) 1px, transparent 1px);
+    background-size: 42px 42px; mask-image: radial-gradient(ellipse 80% 60% at 50% 20%, black, transparent 75%);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    body::after {
+      content: ""; position: fixed; left: 0; right: 0; height: 140px; z-index: 0; pointer-events: none;
+      background: linear-gradient(rgba(79,225,255,0), rgba(79,225,255,.05), rgba(79,225,255,0));
+      animation: scan 9s linear infinite;
+    }
+  }
+  @keyframes scan { from { top: -140px; } to { top: 100vh; } }
+  .mono { font-family: ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 40px 24px 80px; position: relative; z-index: 1; }
+
+  /* HUD corner-bracket frame, applied to panel-like surfaces */
+  .panel, .web-card, .note-box, .issue-card, .modal {
+    position: relative; background: var(--surface); backdrop-filter: blur(10px);
+    border: 1px solid var(--border); border-radius: 3px; box-shadow: var(--shadow);
+  }
+  .panel::before, .web-card::before, .note-box::before, .modal::before,
+  .panel::after, .web-card::after, .note-box::after, .modal::after {
+    content: ""; position: absolute; width: 14px; height: 14px; pointer-events: none; z-index: 2;
+  }
+  .panel::before, .web-card::before, .note-box::before, .modal::before {
+    top: -1px; left: -1px; border-top: 2px solid var(--accent); border-left: 2px solid var(--accent);
+  }
+  .panel::after, .web-card::after, .note-box::after, .modal::after {
+    bottom: -1px; right: -1px; border-bottom: 2px solid var(--accent); border-right: 2px solid var(--accent);
+  }
+
+  .modal-overlay { position: fixed; inset: 0; background: rgba(2,5,8,.75); backdrop-filter: blur(2px);
+    display: none; align-items: center; justify-content: center; z-index: 50; padding: 24px; }
+  .modal-overlay.show { display: flex; }
+  .modal { width: 100%; max-width: 720px; max-height: 82vh; display: flex; flex-direction: column; background: rgba(9,18,25,.96); }
+  .modal-head { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .modal-head h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color: var(--accent);
+    font-family: ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace; }
+  .modal-body { padding: 18px; overflow-y: auto; font-size: 13px; line-height: 1.6; flex: 1; }
+  .modal-body pre { white-space: pre-wrap; word-break: break-word; background: rgba(0,0,0,.35); border: 1px solid var(--border);
+    border-radius: 3px; padding: 12px; font-size: 11.5px; font-family: ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;
+    color: var(--text); max-height: 40vh; overflow-y: auto; }
+  .modal-body h1, .modal-body h2, .modal-body h3, .modal-body h4 { color: var(--accent); font-size: 13px; text-transform: uppercase;
+    letter-spacing: .06em; margin: 18px 0 8px; }
+  .modal-body h1:first-child, .modal-body h2:first-child { margin-top: 0; }
+  .modal-body ul { padding-left: 20px; margin: 6px 0; }
+  .modal-body code { background: rgba(79,225,255,.1); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  .modal-actions { padding: 14px 18px; border-top: 1px solid var(--border); display: flex; justify-content: space-between;
+    align-items: center; gap: 12px; }
+  .modal-run-status { font-size: 11.5px; color: var(--text-muted); font-family: ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace; }
+
+  header.top { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px;
+    flex-wrap: wrap; padding-bottom: 24px; border-bottom: 1px solid var(--border); margin-bottom: 32px; }
+  .eyebrow { font-size: 11px; letter-spacing: .22em; text-transform: uppercase; color: var(--accent); margin: 0 0 8px;
+    text-shadow: 0 0 12px var(--accent-glow); font-family: ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace; }
+  h1 { font-size: 27px; margin: 0; font-weight: 700; letter-spacing: .01em; text-wrap: balance; text-transform: uppercase;
+    text-shadow: 0 0 18px rgba(79,225,255,.25); }
+  .subtitle { color: var(--text-muted); font-size: 13.5px; margin-top: 8px; max-width: 48ch; }
+  .live-indicator { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: .08em; }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--status-done-fg);
+    box-shadow: 0 0 8px var(--status-done-fg); }
+  .live-dot.stale { background: var(--status-blocked-fg); box-shadow: 0 0 8px var(--status-blocked-fg); }
+  @media (prefers-reduced-motion: no-preference) {
+    .live-dot.ok { animation: pulse 2s ease-in-out infinite; }
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .summary-strip { display: flex; gap: 28px; }
+  .summary-stat { text-align: right; }
+  .summary-stat .n { font-size: 30px; font-variant-numeric: tabular-nums; font-weight: 700; display: block; line-height: 1;
+    color: var(--accent); text-shadow: 0 0 14px var(--accent-glow); font-family: ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace; }
+  .summary-stat .l { font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .1em; }
+  section { margin-bottom: 44px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .18em; color: var(--accent); font-weight: 700; margin: 0 0 16px;
+    font-family: ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace; opacity: .85; }
+  h2::before { content: "// "; opacity: .6; }
+  .pill { align-self: flex-start; font-size: 10.5px; letter-spacing: .06em; padding: 3px 10px; border-radius: 2px; font-weight: 700;
+    text-transform: uppercase; font-family: ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;
+    border: 1px solid currentColor; }
+  .pill.pending { background: var(--status-pending-bg); color: var(--status-pending-fg); }
+  .pill.active { background: var(--status-active-bg); color: var(--status-active-fg); box-shadow: 0 0 10px -2px var(--status-active-fg); }
+  .pill.done, .pill.published, .pill.approved { background: var(--status-done-bg); color: var(--status-done-fg); }
+  .pill.blocked, .pill.skipped { background: var(--status-blocked-bg); color: var(--status-blocked-fg); }
+  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 720px) {
+    .panels { grid-template-columns: 1fr; }
+  }
+  .panel { overflow: hidden; }
+  .panel-head { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .panel-head h3 { margin: 0; font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--text); }
+  .panel-head .count { font-size: 11px; color: var(--text-muted); }
+  .empty { padding: 28px 16px; text-align: center; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+  .empty code { display: inline-block; margin-top: 8px; background: var(--surface-sunken); padding: 2px 8px; border-radius: 4px;
+    font-size: 12px; border: 1px solid var(--border); color: var(--accent); }
+  .row { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+  .row:last-child { border-bottom: none; }
+  .row-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .row-name { font-weight: 600; font-size: 13.5px; color: var(--text); }
+  .row-why { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
+  .row-actions { display: flex; gap: 8px; }
+  button.btn { font: inherit; font-size: 11px; font-weight: 700; padding: 6px 13px; letter-spacing: .06em; text-transform: uppercase;
+    border: 1px solid var(--border); background: var(--surface-sunken); color: var(--accent); cursor: pointer;
+    font-family: ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace; border-radius: 2px; transition: all .15s ease;
+    clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px); }
+  button.btn.primary { background: rgba(79,225,255,.16); border-color: var(--accent); color: var(--accent);
+    box-shadow: 0 0 14px -4px var(--accent-glow); }
+  button.btn:hover { background: rgba(79,225,255,.22); box-shadow: 0 0 16px -2px var(--accent-glow); }
+  button.btn:disabled { opacity: .4; cursor: default; box-shadow: none; }
+  footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--border); font-size: 11.5px;
+    color: var(--text-muted); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; position: relative; z-index: 1; }
+  .legend { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+  .legend .dot.pending { background: var(--status-pending-fg); }
+  .legend .dot.active { background: var(--status-active-fg); box-shadow: 0 0 6px var(--status-active-fg); }
+  .legend .dot.done { background: var(--status-done-fg); box-shadow: 0 0 6px var(--status-done-fg); }
+  .legend .dot.blocked { background: var(--status-blocked-fg); box-shadow: 0 0 6px var(--status-blocked-fg); }
+  .legend .dot.gap-token { background: var(--token-gap); box-shadow: 0 0 6px var(--token-gap); }
+  .legend .dot.project-token { background: var(--token-project); box-shadow: 0 0 6px var(--token-project); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .toast { position: fixed; bottom: 20px; right: 20px; background: rgba(9,20,27,.92); border: 1px solid var(--accent);
+    box-shadow: 0 0 24px -4px var(--accent-glow); border-radius: 3px; padding: 10px 14px; font-size: 12.5px; color: var(--accent);
+    opacity: 0; transform: translateY(6px); transition: opacity .2s ease, transform .2s ease; pointer-events: none; z-index: 20; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+
+  .issues { display: flex; flex-direction: column; gap: 10px; margin-bottom: 32px; }
+  .issue-card { border-color: var(--status-blocked-fg); box-shadow: 0 0 16px -6px var(--status-blocked-fg);
+    padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .issue-card::before, .issue-card::after { border-color: var(--status-blocked-fg); }
+  .issue-card .issue-text { font-size: 13px; color: var(--status-blocked-fg); }
+  .issue-card .issue-text strong { font-weight: 700; }
+  .issue-card .row-actions { flex-shrink: 0; }
+
+  .note-box { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .note-box h3 { margin: 0; font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; }
+  .note-box .hint { font-size: 12px; color: var(--text-muted); }
+  .note-box textarea { font: inherit; font-size: 13px; padding: 8px 10px; border-radius: 3px; border: 1px solid var(--border);
+    background: rgba(0,0,0,.25); color: var(--text); resize: vertical; min-height: 56px; }
+  .note-box textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 10px -2px var(--accent-glow); }
+  .note-box .note-actions { display: flex; justify-content: flex-end; }
+
+  /* --- Web visualization --- */
+  .web-layout { display: grid; grid-template-columns: 1.3fr 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .web-layout { grid-template-columns: 1fr; } }
+  .web-card { padding: 16px; }
+  .web-stage { position: relative; width: 100%; aspect-ratio: 1 / 1; max-width: 560px; margin: 0 auto; }
+  .web-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible;
+    filter: drop-shadow(0 0 3px rgba(79,225,255,.25)); }
+  .edge-web { stroke: var(--accent-line); stroke-width: 1; fill: none; }
+  .edge-seq { stroke: rgba(79,225,255,.3); stroke-width: 2; fill: none; }
+  .edge-seq.flowing { stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 6 6; animation: dash 1.1s linear infinite;
+    filter: drop-shadow(0 0 4px var(--accent-glow)); }
+  @keyframes dash { to { stroke-dashoffset: -24; } }
+  @media (prefers-reduced-motion: reduce) { .edge-seq.flowing { animation: none; } }
+
+  .hub { position: absolute; transform: translate(-50%, -50%); width: 150px; text-align: center; }
+  .hub-ring { width: 58px; height: 58px; border-radius: 50%; margin: 0 auto 8px; display: flex; align-items: center;
+    justify-content: center; background: radial-gradient(circle, rgba(79,225,255,.08), rgba(6,11,16,.9));
+    border: 2px solid var(--status-pending-fg); box-shadow: 0 0 0 4px rgba(6,11,16,.6), inset 0 0 12px rgba(0,0,0,.4);
+    font-size: 11px; font-weight: 700; color: var(--text-muted); transition: border-color .3s ease, box-shadow .3s ease;
+    position: relative; font-family: ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace; }
+  .hub.status-active .hub-ring { border-color: var(--status-active-fg); color: var(--status-active-fg);
+    box-shadow: 0 0 0 4px rgba(6,11,16,.6), 0 0 18px -2px var(--status-active-fg), inset 0 0 12px rgba(0,0,0,.4); }
+  .hub.status-done .hub-ring { border-color: var(--status-done-fg); color: var(--status-done-fg);
+    box-shadow: 0 0 0 4px rgba(6,11,16,.6), 0 0 14px -4px var(--status-done-fg), inset 0 0 12px rgba(0,0,0,.4); }
+  .hub.status-blocked .hub-ring { border-color: var(--status-blocked-fg); color: var(--status-blocked-fg); }
+  @media (prefers-reduced-motion: no-preference) {
+    .hub.status-active .hub-ring::before {
+      content: ""; position: absolute; inset: -7px; border-radius: 50%; z-index: -1;
+      border: 2px solid transparent; border-top-color: var(--status-active-fg); border-right-color: var(--status-active-fg);
+      animation: spin 1.4s linear infinite;
+    }
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .hub-name { font-weight: 700; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; }
+  .hub-stat { font-size: 10px; color: var(--text-muted); margin-top: 2px; font-family: ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace; }
+  .hub-action { font-size: 10px; color: var(--text); margin-top: 4px; line-height: 1.35; }
+  .hub.stuck .hub-ring { border-color: var(--status-blocked-fg); border-style: dashed;
+    box-shadow: 0 0 0 4px rgba(6,11,16,.6), 0 0 16px -4px var(--status-blocked-fg); }
+  .hub-nudge { margin-top: 6px; }
+  .hub-nudge button.btn { font-size: 10px; padding: 3px 8px; }
+
+  .token { position: absolute; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--bg-deep);
+    transform: translate(-50%, -50%); transition: left .8s cubic-bezier(.4,0,.2,1), top .8s cubic-bezier(.4,0,.2,1);
+    cursor: default; z-index: 3; }
+  .token.gap { background: var(--token-gap); box-shadow: 0 0 10px var(--token-gap); }
+  .token.project { background: var(--token-project); box-shadow: 0 0 10px var(--token-project); }
+  .token-ghost { position: absolute; width: 6px; height: 6px; border-radius: 50%; opacity: .4; transform: translate(-50%, -50%); z-index: 1; }
+  .token-ghost.gap { background: var(--token-gap); box-shadow: 0 0 5px var(--token-gap); }
+  .token-ghost.project { background: var(--token-project); box-shadow: 0 0 5px var(--token-project); }
+
+  .feed { display: flex; flex-direction: column; gap: 0; max-height: 560px; overflow-y: auto; }
+  .feed-row { padding: 10px 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 3px;
+    border-left: 2px solid transparent; }
+  .feed-row:hover { border-left-color: var(--accent); background: rgba(79,225,255,.03); }
+  .feed-row:last-child { border-bottom: none; }
+  .feed-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .feed-agent { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--accent);
+    font-family: ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace; }
+  .feed-agent::before { content: "["; } .feed-agent::after { content: "]"; }
+  .feed-time { font-size: 10.5px; color: var(--text-muted); font-family: ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace; }
+  .feed-msg { font-size: 12.5px; line-height: 1.45; color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="eyebrow mono">SkillForge</p>
+      <h1>Pipeline Status</h1>
+      <p class="subtitle">Resume gaps → approved project → built → reviewed → published to GitHub. Live — updates as the orchestrator runs.</p>
+    </div>
+    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
+      <div class="live-indicator mono"><span id="live-dot" class="live-dot ok"></span><span id="live-text">connecting…</span></div>
+      <div class="summary-strip mono">
+        <div class="summary-stat"><span class="n" id="stat-gaps">0</span><span class="l">Gaps found</span></div>
+        <div class="summary-stat"><span class="n" id="stat-approved">0</span><span class="l">Approved</span></div>
+        <div class="summary-stat"><span class="n" id="stat-building">0</span><span class="l">Building</span></div>
+        <div class="summary-stat"><span class="n" id="stat-published">0</span><span class="l">Published</span></div>
+      </div>
+    </div>
+  </header>
+
+  <section id="issues-section" style="display:none;">
+    <h2>Issues</h2>
+    <div class="issues" id="issues-body"></div>
+  </section>
+
+  <section>
+    <h2>Agents &amp; Activity</h2>
+    <div class="web-layout">
+      <div class="web-card">
+        <div class="web-stage" id="web-stage">
+          <svg class="web-svg" id="web-svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet"></svg>
+          <div id="hubs"></div>
+          <div id="tokens"></div>
+        </div>
+      </div>
+      <div class="web-card" style="padding:0;">
+        <div class="panel-head"><h3>Activity</h3><span class="count mono" id="feed-count">0 events</span></div>
+        <div class="feed" id="feed-body"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Gaps &amp; Projects</h2>
+    <div class="panels">
+      <div class="panel">
+        <div class="panel-head"><h3>Gaps</h3><span class="count mono" id="gaps-count">0 found</span></div>
+        <div id="gaps-body"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Projects</h3><span class="count mono" id="projects-count">0 in flight</span></div>
+        <div id="projects-body"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="note-box">
+      <h3>Send a note to the orchestrator</h3>
+      <p class="hint">Anything that doesn't fit a button above — a correction, a new constraint, a question. Picked up next time you talk to Claude Code in this project.</p>
+      <textarea id="note-input" placeholder="e.g. skip the Spark idea, I already did something similar last year"></textarea>
+      <div class="note-actions"><button class="btn primary" id="note-send">Send</button></div>
+    </div>
+  </section>
+
+  <footer>
+    <span class="mono">Polling <code>state/*.json</code> every 2.5s. Clicking an action queues it in <code>state/approvals.json</code> for the orchestrator to pick up next time you talk to it in Claude Code.</span>
+    <span class="legend">
+      <span><span class="dot pending"></span>pending</span>
+      <span><span class="dot active"></span>active</span>
+      <span><span class="dot done"></span>done</span>
+      <span><span class="dot blocked"></span>blocked</span>
+      <span><span class="dot gap-token"></span>gap</span>
+      <span><span class="dot project-token"></span>project</span>
+      <span>dashed ring = no update in 90s+, nudge available</span>
+    </span>
+  </footer>
+</div>
+<div class="toast mono" id="toast"></div>
+
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modal-title">Review</h3>
+      <button class="btn" id="modal-close">Close</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-actions">
+      <span class="modal-run-status" id="modal-run-status"></span>
+      <button class="btn primary" id="modal-run-demo">Run demo now</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const POLL_MS = 2500;
+let lastOkAt = null;
+let LAST_PROJECTS = [];
+
+// Small, purpose-built markdown-to-HTML for our own generated review reports — not a general parser.
+function mdToHtml(md) {
+  const lines = esc(md).split('\n');
+  let html = '';
+  let inList = false;
+  for (const raw of lines) {
+    const line = raw;
+    if (/^#{1,4}\s+/.test(line)) {
+      if (inList) { html += '</ul>'; inList = false; }
+      html += `<h4>${line.replace(/^#{1,4}\s+/, '')}</h4>`;
+    } else if (/^[-*]\s+/.test(line)) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      html += `<li>${line.replace(/^[-*]\s+/, '')}</li>`;
+    } else if (line.trim() === '---') {
+      if (inList) { html += '</ul>'; inList = false; }
+      html += '<hr style="border-color:var(--border); margin:16px 0;" />';
+    } else if (line.trim() === '') {
+      if (inList) { html += '</ul>'; inList = false; }
+    } else {
+      if (inList) { html += '</ul>'; inList = false; }
+      html += `<p>${line}</p>`;
+    }
+  }
+  if (inList) html += '</ul>';
+  return html
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`(.+?)`/g, '<code>$1</code>');
+}
+
+async function openReview(slug) {
+  const project = LAST_PROJECTS.find(p => p.slug === slug);
+  const overlay = document.getElementById('modal-overlay');
+  const title = document.getElementById('modal-title');
+  const body = document.getElementById('modal-body');
+  const runBtn = document.getElementById('modal-run-demo');
+  const runStatus = document.getElementById('modal-run-status');
+  title.textContent = project ? project.name : slug;
+  runStatus.textContent = '';
+  runBtn.disabled = !(project && project.demo_cmd);
+  runBtn.onclick = () => runDemo(slug);
+  body.innerHTML = '<p class="mono">Loading review report…</p>';
+  overlay.classList.add('show');
+
+  if (!project || !project.review_file) {
+    body.innerHTML = '<p>No review report on file for this project yet.</p>';
+    return;
+  }
+  try {
+    const res = await fetch('/' + project.review_file);
+    if (!res.ok) throw new Error('not found');
+    const text = await res.text();
+    body.innerHTML = mdToHtml(text);
+  } catch (e) {
+    body.innerHTML = '<p>Could not load the review report file.</p>';
+  }
+}
+
+async function runDemo(slug) {
+  const runBtn = document.getElementById('modal-run-demo');
+  const runStatus = document.getElementById('modal-run-status');
+  const body = document.getElementById('modal-body');
+  runBtn.disabled = true;
+  runStatus.textContent = 'running demo… (this executes the real project, may take a minute)';
+  try {
+    const res = await fetch('/api/run-demo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug }),
+    });
+    const data = await res.json();
+    runStatus.textContent = data.ok ? `✓ ran in ${data.duration_s}s` : `✗ failed after ${data.duration_s ?? '?'}s`;
+    const heading = `<h4>Live Demo Output</h4>`;
+    const pre = `<pre>${esc(data.output || data.error || '(no output)')}</pre>`;
+    body.insertAdjacentHTML('afterbegin', heading + pre);
+  } catch (e) {
+    runStatus.textContent = 'could not reach dashboard server';
+  }
+  runBtn.disabled = false;
+}
+
+document.getElementById('modal-close').addEventListener('click', () => {
+  document.getElementById('modal-overlay').classList.remove('show');
+});
+document.getElementById('modal-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'modal-overlay') e.target.classList.remove('show');
+});
+
+const SEQUENCE = ['gap-analyzer', 'planner', 'coder', 'reviewer', 'publisher'];
+
+// Pentagon layout in a 0-100 viewBox, gap-analyzer at top, proceeding clockwise.
+const HUB_POS = {};
+SEQUENCE.forEach((id, i) => {
+  const angle = (-90 + i * 72) * Math.PI / 180;
+  HUB_POS[id] = { x: 50 + 38 * Math.cos(angle), y: 50 + 38 * Math.sin(angle) };
+});
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+
+function timeAgo(iso) {
+  if (!iso) return 'never';
+  const diff = Date.now() - new Date(iso).getTime();
+  const s = Math.round(diff / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  return `${h}h ago`;
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+async function postApproval(kind, name, action, btn, message) {
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, name, action, message })
+    });
+    if (!res.ok) throw new Error('request failed');
+    showToast(action === 'note' ? 'Note sent' : `Queued: ${action} — ${name}`);
+    return true;
+  } catch (e) {
+    showToast('Could not reach dashboard server');
+    if (btn) btn.disabled = false;
+    return false;
+  }
+}
+
+function renderIssues(stages) {
+  const blocked = stages.filter(s => s.status === 'blocked');
+  const section = document.getElementById('issues-section');
+  const body = document.getElementById('issues-body');
+  if (!blocked.length) { section.style.display = 'none'; body.innerHTML = ''; return; }
+  section.style.display = '';
+  body.innerHTML = blocked.map(s => `
+    <div class="issue-card">
+      <span class="issue-text"><strong>${esc(s.name)}</strong> — ${esc(s.detail || 'blocked, no detail given')}</span>
+      <div class="row-actions">
+        <button class="btn primary" onclick="postApproval('stage','${esc(s.id)}','retry', this)">Retry</button>
+        <button class="btn" onclick="postApproval('stage','${esc(s.id)}','cancel', this)">Cancel</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+const STUCK_THRESHOLD_S = 90;
+
+function renderWeb(stages, gaps, projects, activity) {
+  const svg = document.getElementById('web-svg');
+  const hubsEl = document.getElementById('hubs');
+  const tokensEl = document.getElementById('tokens');
+  const stageById = Object.fromEntries(stages.map(s => [s.id, s]));
+  const activityByStage = Object.fromEntries((activity || []).map(a => [a.stage, a]));
+
+  // Edges: faint full mesh (the "web") + solid pipeline sequence on top.
+  let edges = '';
+  for (let i = 0; i < SEQUENCE.length; i++) {
+    for (let j = i + 1; j < SEQUENCE.length; j++) {
+      const a = HUB_POS[SEQUENCE[i]], b = HUB_POS[SEQUENCE[j]];
+      const isSeq = j === i + 1;
+      if (!isSeq) {
+        edges += `<line class="edge-web" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" />`;
+      }
+    }
+  }
+  for (let i = 0; i < SEQUENCE.length - 1; i++) {
+    const a = HUB_POS[SEQUENCE[i]], b = HUB_POS[SEQUENCE[i + 1]];
+    const nextStage = stageById[SEQUENCE[i + 1]];
+    const flowing = nextStage && nextStage.status === 'active';
+    edges += `<line class="edge-seq ${flowing ? 'flowing' : ''}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" />`;
+  }
+  svg.innerHTML = edges;
+
+  hubsEl.innerHTML = stages.map((s, i) => {
+    const pos = HUB_POS[s.id];
+    const act = activityByStage[s.id];
+    let stuck = false;
+    let actionHtml = '';
+    if (s.status === 'active' && act) {
+      const staleS = act.last_heartbeat_at ? Math.round((Date.now() - new Date(act.last_heartbeat_at).getTime()) / 1000) : Infinity;
+      stuck = staleS > STUCK_THRESHOLD_S;
+      actionHtml = `<div class="hub-action">${esc(act.current_action)}<br /><span class="mono">${stuck ? 'no update ' : 'updated '}${timeAgo(act.last_heartbeat_at)}</span></div>`;
+      if (stuck) {
+        actionHtml += `<div class="hub-nudge"><button class="btn primary" onclick="postApproval('stage','${esc(s.id)}','nudge', this)">Nudge</button></div>`;
+      }
+    } else if (s.status === 'active') {
+      actionHtml = `<div class="hub-action mono">working…</div>`;
+    }
+    return `
+      <div class="hub status-${esc(s.status)} ${stuck ? 'stuck' : ''}" style="left:${pos.x}%; top:${pos.y}%;" title="${esc(s.role)}">
+        <div class="hub-ring"><span class="idx">${String(i + 1).padStart(2, '0')}</span></div>
+        <div class="hub-name">${esc(s.name)}</div>
+        <div class="hub-stat mono">${s.runs || 0} run${s.runs === 1 ? '' : 's'} · ${timeAgo(s.last_active_at)}</div>
+        ${actionHtml}
+      </div>`;
+  }).join('');
+
+  // Tokens: gaps still parked at gap-analyzer, plus projects wherever they currently are.
+  let tokenHtml = '';
+  gaps.filter(g => g.current_stage).forEach(g => {
+    const pos = HUB_POS[g.current_stage];
+    if (!pos) return;
+    tokenHtml += `<div class="token gap" style="left:${pos.x}%; top:${pos.y}%;" title="Gap: ${esc(g.name)} (${esc(g.status)})"></div>`;
+  });
+  projects.filter(p => p.current_stage).forEach(p => {
+    const idx = SEQUENCE.indexOf(p.current_stage);
+    if (idx < 0) return;
+    // Ghost trail: faint dots at every stage already passed through.
+    for (let k = 0; k < idx; k++) {
+      const gp = HUB_POS[SEQUENCE[k]];
+      tokenHtml += `<div class="token-ghost project" style="left:${gp.x}%; top:${gp.y}%;"></div>`;
+    }
+    const pos = HUB_POS[p.current_stage];
+    tokenHtml += `<div class="token project" style="left:${pos.x}%; top:${pos.y}%;" title="${esc(p.name)} — ${esc(p.status)}"></div>`;
+  });
+  tokensEl.innerHTML = tokenHtml;
+}
+
+function renderFeed(events) {
+  const list = (events || []).slice(-30).reverse();
+  document.getElementById('feed-count').textContent = `${events.length} events`;
+  const body = document.getElementById('feed-body');
+  if (!list.length) {
+    body.innerHTML = `<div class="empty">No activity yet.</div>`;
+    return;
+  }
+  body.innerHTML = list.map(e => `
+    <div class="feed-row">
+      <div class="feed-top">
+        <span class="feed-agent">${esc(e.agent)}</span>
+        <span class="feed-time mono">${e.ts ? new Date(e.ts).toLocaleTimeString() : ''}</span>
+      </div>
+      <div class="feed-msg">${esc(e.message)}</div>
+    </div>
+  `).join('');
+}
+
+function renderGaps(gaps) {
+  document.getElementById('gaps-count').textContent = `${gaps.length} found`;
+  const body = document.getElementById('gaps-body');
+  if (!gaps.length) {
+    body.innerHTML = `<div class="empty">No gap analysis has been run yet.<br /><code>run a gap analysis</code> in the skillforge CLI to populate this.</div>`;
+    return;
+  }
+  body.innerHTML = gaps.map(g => `
+    <div class="row">
+      <div class="row-top">
+        <span class="row-name">${esc(g.name)}</span>
+        <span class="pill ${esc(g.status)}">${esc(g.status)}</span>
+      </div>
+      <div class="row-why">${esc(g.why || '')}${g.project ? ` &rarr; <strong>${esc(g.project)}</strong>` : ''}</div>
+      ${g.status === 'proposed' ? `
+      <div class="row-actions">
+        <button class="btn primary" onclick="postApproval('gap','${esc(g.name)}','approve-build', this)">Approve build</button>
+        <button class="btn" onclick="postApproval('gap','${esc(g.name)}','skip', this)">Skip</button>
+      </div>` : ''}
+      ${['approved','building'].includes(g.status) ? `
+      <div class="row-actions">
+        <button class="btn" onclick="postApproval('gap','${esc(g.name)}','cancel', this)">Cancel</button>
+      </div>` : ''}
+    </div>
+  `).join('');
+}
+
+function renderProjects(projects) {
+  LAST_PROJECTS = projects;
+  document.getElementById('projects-count').textContent = `${projects.length} in flight`;
+  const body = document.getElementById('projects-body');
+  if (!projects.length) {
+    body.innerHTML = `<div class="empty">No projects started yet.<br />Projects appear here once a gap is approved for building.</div>`;
+    return;
+  }
+  body.innerHTML = projects.map(p => `
+    <div class="row">
+      <div class="row-top">
+        <span class="row-name">${esc(p.name)}</span>
+        <span class="pill ${esc(p.status)}">${esc(p.status)}</span>
+      </div>
+      <div class="row-why">${p.repo ? `<a href="${esc(p.repo)}" target="_blank" rel="noopener">${esc(p.repo)}</a>` : (p.gap ? `Addresses: ${esc(p.gap)}` : '')}</div>
+      <div class="row-actions">
+        ${p.status === 'review' ? `<button class="btn" onclick="openReview('${esc(p.slug)}')">Review project</button>` : ''}
+        ${p.status === 'review' ? `<button class="btn primary" onclick="postApproval('project','${esc(p.name)}','approve-publish', this)">Approve publish</button>` : ''}
+        ${['planned','coding','review','approved-to-publish'].includes(p.status) ? `<button class="btn" onclick="postApproval('project','${esc(p.name)}','cancel', this)">Cancel</button>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderSummary(gaps, projects) {
+  document.getElementById('stat-gaps').textContent = gaps.length;
+  document.getElementById('stat-approved').textContent = gaps.filter(g => g.status !== 'proposed').length;
+  document.getElementById('stat-building').textContent = projects.filter(p => ['planned','coding','review'].includes(p.status)).length;
+  document.getElementById('stat-published').textContent = projects.filter(p => p.status === 'published').length;
+}
+
+async function poll() {
+  const dot = document.getElementById('live-dot');
+  const text = document.getElementById('live-text');
+  try {
+    const [pipeline, gaps, projects, events, activity] = await Promise.all([
+      fetch('/state/pipeline.json').then(r => r.json()),
+      fetch('/state/gaps.json').then(r => r.json()),
+      fetch('/state/projects.json').then(r => r.json()),
+      fetch('/state/events.json').then(r => r.json()).catch(() => ({ events: [] })),
+      fetch('/state/agent_activity.json').then(r => r.json()).catch(() => ({ active: [] })),
+    ]);
+    renderWeb(pipeline.stages || [], gaps.gaps || [], projects.projects || [], activity.active || []);
+    renderIssues(pipeline.stages || []);
+    renderFeed(events.events || []);
+    renderGaps(gaps.gaps || []);
+    renderProjects(projects.projects || []);
+    renderSummary(gaps.gaps || [], projects.projects || []);
+    lastOkAt = new Date();
+    dot.className = 'live-dot ok';
+    text.textContent = `live — updated ${lastOkAt.toLocaleTimeString()}`;
+  } catch (e) {
+    dot.className = 'live-dot stale';
+    text.textContent = lastOkAt ? `stale since ${lastOkAt.toLocaleTimeString()} (server unreachable)` : 'server unreachable';
+  }
+}
+
+document.getElementById('note-send').addEventListener('click', async () => {
+  const input = document.getElementById('note-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+  const btn = document.getElementById('note-send');
+  const ok = await postApproval('general', 'note', 'note', btn, msg);
+  btn.disabled = false;
+  if (ok) input.value = '';
+});
+
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>
